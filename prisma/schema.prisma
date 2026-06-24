@@ -1,0 +1,56 @@
+// OffMarket.AI — Prisma schema
+// Provider: Supabase Postgres. `directUrl` is used by Prisma Migrate (direct 5432),
+// while `url` is the pooled runtime connection (PgBouncer 6543).
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum LeadStatus {
+  RAW
+  SKIP_TRACED
+  AI_CONTACTED
+  QUALIFIED
+  COLD
+}
+
+model Property {
+  id           String        @id @default(uuid())
+  address      String
+  city         String
+  state        String
+  zip          String
+  propertyType String // e.g., Land, Multi-Family, Single-Family
+  zoning       String?
+  ownerName    String?
+  ownerPhone   String?
+  ownerEmail   String?
+  scrapeSource String
+  status       LeadStatus    @default(RAW)
+  aiNotes      String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  listPackages ListPackage[] @relation("ListToProperties")
+
+  // Composite identity used for ingestion de-duplication (see POST /api/scrape).
+  @@unique([address, city, state, zip], name: "property_location")
+  @@index([status])
+  @@index([state])
+  @@index([scrapeSource])
+  @@index([createdAt])
+}
+
+model ListPackage {
+  id          String     @id @default(uuid())
+  name        String // e.g., "Florida Commercial Infill Land"
+  description String
+  price       Float
+  properties  Property[] @relation("ListToProperties")
+  createdAt   DateTime   @default(now())
+}

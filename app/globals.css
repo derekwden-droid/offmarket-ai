@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbars ------------------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1f2937 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #1f2937;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #374151;
+}
+
+/* Terminal cursor -------------------------------------------------------- */
+@keyframes om-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.om-cursor::after {
+  content: "▋";
+  margin-left: 2px;
+  color: #10b981;
+  animation: om-blink 1s steps(1) infinite;
+}
+
+/* Streamed line entrance ------------------------------------------------- */
+@keyframes om-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.om-line {
+  animation: om-fade-in 0.18s ease-out;
+}
+
+/* Live status pulse ------------------------------------------------------ */
+@keyframes om-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.om-pulse > span {
+  animation: om-pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .om-cursor::after,
+  .om-line,
+  .om-pulse > span,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
