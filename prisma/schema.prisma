@@ -20,8 +20,46 @@ enum LeadStatus {
   COLD
 }
 
+/// Outreach channel for consent, suppression, conversations, and the agent config.
+enum Channel {
+  SMS
+  EMAIL
+}
+
+/// Why a phone/email is suppressed. Enforced at send time (Phase 4).
+enum SuppressionReason {
+  STOP
+  DNC
+  BOUNCE
+  MANUAL
+}
+
+/// Direction of a logged message in a conversation transcript.
+enum MessageDirection {
+  IN
+  OUT
+}
+
+/// States the live outreach agent machine moves through (Phase 5).
+enum ConversationState {
+  NEW
+  CONTACTED
+  ENGAGED
+  QUALIFIED
+  COLD
+  OPTED_OUT
+}
+
+/// Lifecycle of an off-request skip-trace batch job (Phase 2).
+enum SkipTraceJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model Property {
-  id           String        @id @default(uuid())
+  id           String     @id @default(uuid())
   address      String
   city         String
   state        String
@@ -32,11 +70,14 @@ model Property {
   ownerPhone   String?
   ownerEmail   String?
   scrapeSource String
-  status       LeadStatus    @default(RAW)
+  status       LeadStatus @default(RAW)
   aiNotes      String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  listPackages ListPackage[] @relation("ListToProperties")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  listPackages   ListPackage[]   @relation("ListToProperties")
+  consentRecords ConsentRecord[]
+  conversations  Conversation[]
 
   // Composite identity used for ingestion de-duplication (see POST /api/scrape).
   @@unique([address, city, state, zip], name: "property_location")
@@ -53,4 +94,87 @@ model ListPackage {
   price       Float
   properties  Property[] @relation("ListToProperties")
   createdAt   DateTime   @default(now())
+}
+
+/// Auditable proof of consent per contact and channel. No send path may bypass it.
+model ConsentRecord {
+  id                 String   @id @default(uuid())
+  propertyId         String
+  property           Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  channel            Channel
+  consentTextVersion String
+  source             String
+  ipAddress          String?
+  createdAt          DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([channel])
+}
+
+/// Opt-out / DNC / bounce ledger, enforced at send time across all channels.
+model Suppression {
+  id        String            @id @default(uuid())
+  value     String // normalized phone (E.164) or lowercased email
+  channel   Channel
+  reason    SuppressionReason
+  createdAt DateTime          @default(now())
+
+  @@unique([value, channel], name: "suppression_identity")
+  @@index([value])
+}
+
+/// Outreach thread state per property.
+model Conversation {
+  id             String            @id @default(uuid())
+  propertyId     String
+  property       Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  channel        Channel
+  state          ConversationState @default(NEW)
+  assignedNumber String?
+  messages       Message[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([propertyId])
+  @@index([state])
+}
+
+/// Per-message transcript log for a conversation.
+model Message {
+  id             String           @id @default(uuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      MessageDirection
+  body           String
+  providerSid    String?
+  status         String?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId])
+  @@index([providerSid])
+}
+
+/// Batch-job progress tracking for off-request skip tracing.
+model SkipTraceJob {
+  id         String             @id @default(uuid())
+  status     SkipTraceJobStatus @default(PENDING)
+  total      Int                @default(0)
+  completed  Int                @default(0)
+  failed     Int                @default(0)
+  createdAt  DateTime           @default(now())
+  finishedAt DateTime?
+
+  @@index([status])
+}
+
+/// Persisted outreach-agent settings (single active row, but modeled as a table).
+model AgentConfig {
+  id             String    @id @default(uuid())
+  tone           String
+  objectives     String[]
+  channels       Channel[]
+  scriptTemplate String
+  thresholds     Json
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }

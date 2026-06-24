@@ -41,10 +41,13 @@ export function fail(
 /**
  * Map a thrown value to a consistent HTTP error response.
  *
- *  - ZodError                          -> 422 VALIDATION_ERROR
- *  - Prisma P2002 (unique constraint)  -> 409 CONFLICT
- *  - Prisma P2025 (record not found)   -> 404 NOT_FOUND
- *  - anything else                     -> 500 INTERNAL_ERROR
+ * - ZodError                          -> 422 VALIDATION_ERROR
+ * - Prisma init / connection failure  -> 503 SERVICE_UNAVAILABLE
+ * - Prisma P2002 (unique constraint)  -> 409 CONFLICT
+ * - Prisma P2003 (FK constraint)      -> 409 CONFLICT
+ * - Prisma P2025 (record not found)   -> 404 NOT_FOUND
+ * - other known Prisma errors         -> 500 DATABASE_ERROR
+ * - anything else                     -> 500 INTERNAL_ERROR
  */
 export function handleRouteError(error: unknown): NextResponse<ApiErrorBody> {
   if (error instanceof ZodError) {
@@ -56,19 +59,37 @@ export function handleRouteError(error: unknown): NextResponse<ApiErrorBody> {
     );
   }
 
+  // The database could not be reached / the client could not initialize.
+  // Treat this as a transient outage so callers can retry.
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return fail(
+      "SERVICE_UNAVAILABLE",
+      "The database is temporarily unavailable. Please retry shortly.",
+      503,
+    );
+  }
+
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === "P2002") {
-      return fail(
-        "CONFLICT",
-        "A record with the same unique fields already exists.",
-        409,
-        { target: error.meta?.target },
-      );
+    switch (error.code) {
+      case "P2002":
+        return fail(
+          "CONFLICT",
+          "A record with the same unique fields already exists.",
+          409,
+          { target: error.meta?.target },
+        );
+      case "P2003":
+        return fail(
+          "CONFLICT",
+          "The operation violates a foreign-key constraint.",
+          409,
+          { field: error.meta?.field_name },
+        );
+      case "P2025":
+        return fail("NOT_FOUND", "The requested record was not found.", 404);
+      default:
+        return fail("DATABASE_ERROR", `Database error (${error.code}).`, 500);
     }
-    if (error.code === "P2025") {
-      return fail("NOT_FOUND", "The requested record was not found.", 404);
-    }
-    return fail("DATABASE_ERROR", `Database error (${error.code}).`, 500);
   }
 
   const message =

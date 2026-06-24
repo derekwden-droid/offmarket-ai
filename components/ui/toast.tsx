@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Info,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ const DEFAULT_DURATION = 4500;
 
 const VARIANT_STYLES: Record<
   ToastVariant,
-  { icon: React.ComponentType<{ className?: string }>; color: string }
+  { icon: LucideIcon; color: string }
 > = {
   success: { icon: CheckCircle2, color: "#10B981" },
   error: { icon: XCircle, color: "#F43F5E" },

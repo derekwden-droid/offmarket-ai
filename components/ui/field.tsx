@@ -50,6 +50,7 @@ export const Textarea = React.forwardRef<
 Textarea.displayName = "Textarea";
 
 export type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
+
 /** Native select styled to match the design system, with a custom chevron. */
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, children, ...props }, ref) => (

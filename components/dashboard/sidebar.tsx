@@ -12,9 +12,12 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { SidebarCounts } from "@/lib/data";
 import { cn, formatNumber } from "@/lib/utils";
 import { useSidebar } from "@/components/dashboard/sidebar-provider";
+import {
+  useDashboardData,
+  type SidebarCountsDTO,
+} from "@/lib/hooks/use-dashboard-data";
 
 type Accent = "neutral" | "cyber" | "emerald";
 
@@ -38,7 +41,13 @@ const ACCENT_ACTIVE: Record<Accent, string> = {
   emerald: "#10B981",
 };
 
-function buildGroups(counts: SidebarCounts): NavGroup[] {
+const EMPTY_COUNTS: SidebarCountsDTO = {
+  properties: 0,
+  contacted: 0,
+  packages: 0,
+};
+
+function buildGroups(counts: SidebarCountsDTO): NavGroup[] {
   return [
     {
       heading: "Workspace",
@@ -81,9 +90,14 @@ function buildGroups(counts: SidebarCounts): NavGroup[] {
   ];
 }
 
-export function Sidebar({ counts }: { counts: SidebarCounts }) {
+export function Sidebar() {
   const pathname = usePathname();
   const { isOpen, close } = useSidebar();
+
+  // Live counts via TanStack Query, seeded with the server-rendered payload
+  // (see DashboardDataProvider) so the badges never flash zeros on first paint.
+  const { data } = useDashboardData();
+  const counts = data?.sidebar ?? EMPTY_COUNTS;
   const groups = buildGroups(counts);
 
   return (
