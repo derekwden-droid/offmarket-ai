@@ -3,11 +3,12 @@
 import * as React from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { LeadStatus } from "@prisma/client";
+import { fetchDashboardData } from "@/app/dashboard/actions";
 
 /**
- * Client-side dashboard metrics, fetched from `GET /api/stats` and cached by
- * TanStack Query. Dates are serialized to ISO strings over the wire, so the
- * client DTOs use `string` where the server-side helpers use `Date`.
+ * Client-side dashboard metrics, fetched via the `fetchDashboardData` server
+ * action and cached by TanStack Query. Dates are serialized to ISO strings over
+ * the wire, so the client DTOs use `string` where the server helpers use `Date`.
  */
 
 export interface DashboardStatsDTO {
@@ -45,33 +46,8 @@ export interface DashboardPayloadDTO {
   sidebar: SidebarCountsDTO;
 }
 
-interface ApiSuccess {
-  ok: true;
-  data: DashboardPayloadDTO;
-}
-
-interface ApiError {
-  ok: false;
-  error: { code: string; message: string; details?: unknown };
-}
-
 /** Stable query key shared by the Overview dashboard and the sidebar counters. */
 export const DASHBOARD_QUERY_KEY = ["dashboard", "metrics"] as const;
-
-async function fetchDashboard(): Promise<DashboardPayloadDTO> {
-  const response = await fetch("/api/stats", { cache: "no-store" });
-  const body = (await response.json()) as ApiSuccess | ApiError;
-
-  if (!response.ok || body.ok === false) {
-    const message =
-      body.ok === false
-        ? body.error.message
-        : `Request failed with status ${response.status}.`;
-    throw new Error(message);
-  }
-
-  return body.data;
-}
 
 /**
  * React context that carries the server-rendered initial payload down to every
@@ -110,7 +86,7 @@ export function useDashboardData(): UseQueryResult<DashboardPayloadDTO, Error> {
 
   return useQuery({
     queryKey: DASHBOARD_QUERY_KEY,
-    queryFn: fetchDashboard,
+    queryFn: fetchDashboardData,
     initialData,
     refetchInterval: 30_000,
     refetchOnReconnect: true,
