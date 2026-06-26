@@ -99,4 +99,6 @@ export async function removeSuppression(
 export async function listSuppressions(limit = 100): Promise<SuppressionRow[]> {
   return prisma.suppression.findMany({
     orderBy: { createdAt: "desc" },
-    
+    take: limit,
+  });
+}

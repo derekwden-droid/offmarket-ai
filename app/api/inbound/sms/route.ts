@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-// NextResponse is used for the provider-specific acks (TwiML / JSON) below.
 import { fail } from "@/lib/api";
 import {
   verifyTwilioSignature,
@@ -50,10 +49,10 @@ export async function POST(request: NextRequest) {
     inbound = parseTwilioInbound(params);
     await handleInboundSms(inbound);
     // Empty TwiML: we reply (if needed) via the API in the handler, not TwiML.
-    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-      status: 200,
-      headers: { "Content-Type": "text/xml" },
-    });
+    return new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      { status: 200, headers: { "Content-Type": "text/xml" } },
+    );
   }
 
   if (telnyxSig) {
@@ -72,9 +71,12 @@ export async function POST(request: NextRequest) {
     } catch {
       return fail("VALIDATION_ERROR", "Body is not valid JSON.", 422);
     }
-    inbound = parseTelnyxInbound(json as Parameters<typeof parseTelnyxInbound>[0]);
+    inbound = parseTelnyxInbound(
+      json as Parameters<typeof parseTelnyxInbound>[0],
+    );
     await handleInboundSms(inbound);
     return NextResponse.json({ ok: true });
   }
 
-  return fail("UNAUTHO
+  return fail("UNAUTHORIZED", "Missing provider signature header.", 401);
+}
