@@ -335,7 +335,7 @@ export default function OutreachPage() {
   function deploy() {
     if (intervalRef.current) return;
 
-    const channels: PrismaChannel[] = [];
+    const channels: Channel[] = [];
     if (sms) channels.push("SMS");
     if (email) channels.push("Email");
     if (channels.length === 0) {
