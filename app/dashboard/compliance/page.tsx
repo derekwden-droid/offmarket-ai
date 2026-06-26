@@ -91,7 +91,6 @@ function fromDTO(dto: ComplianceConfigDTO): ConfigFormState {
 }
 
 export default function CompliancePage() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const overview = useQuery<ComplianceOverviewDTO>({

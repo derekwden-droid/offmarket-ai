@@ -87,7 +87,7 @@ export async function handleInboundSms(
     });
     conversationId = conversation.id;
     await logMessage({
-      conversationId,
+      conversationId: conversation.id,
       direction: "IN",
       body: inbound.body,
       providerSid: inbound.providerSid,
