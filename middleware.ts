@@ -10,18 +10,18 @@ import { isAuthorizedApiRequest } from "@/lib/auth";
  * directly — it reads/writes through server actions — so locking the HTTP API
  * does not affect the app.
  *
- * Exception: `/api/inngest` is the queue's own endpoint. Inngest authenticates
- * its calls with `INNGEST_SIGNING_KEY` (request-signature verification), so the
- * shared-secret gate must let it through or background jobs would never run.
+ * Exceptions (self-authenticating routes that must bypass the shared secret):
+ *   - /api/inngest      — Inngest verifies its own request signatures.
+ *   - /api/scrape       — verifies an HMAC signature (SCRAPE_WEBHOOK_SECRET).
+ *   - /api/inbound/*    — inbound SMS webhooks verify a provider signature
+ *                         (Twilio HMAC-SHA1 / Telnyx Ed25519). Phase 4.
  */
 export function middleware(request: NextRequest): NextResponse {
-  // These routes authenticate callers themselves and must bypass the
-  // shared-secret gate: Inngest verifies its own request signatures, and
-  // /api/scrape verifies an HMAC signature (SCRAPE_WEBHOOK_SECRET).
   const { pathname } = request.nextUrl;
   if (
     pathname.startsWith("/api/inngest") ||
-    pathname.startsWith("/api/scrape")
+    pathname.startsWith("/api/scrape") ||
+    pathname.startsWith("/api/inbound")
   ) {
     return NextResponse.next();
   }

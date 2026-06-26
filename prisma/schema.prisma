@@ -117,6 +117,7 @@ model Suppression {
   value     String // normalized phone (E.164) or lowercased email
   channel   Channel
   reason    SuppressionReason
+  detail    String? // why suppressed (e.g. "Inbound STOP keyword", "national DNC via <host>")
   createdAt DateTime          @default(now())
 
   @@unique([value, channel], name: "suppression_identity")
@@ -177,4 +178,22 @@ model AgentConfig {
   thresholds     Json
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+/// Single active compliance configuration (sender identity, quiet hours,
+/// frequency cap, consent-text version, and the global kill switch). Read by the
+/// send-time gate on every evaluation (Phase 4).
+model ComplianceConfig {
+  id                   String   @id @default(uuid())
+  sendingEnabled       Boolean  @default(false)
+  businessName         String
+  physicalAddress      String
+  supportEmail         String
+  smsFromNumber        String?
+  quietHoursStart      Int      @default(8)
+  quietHoursEnd        Int      @default(20)
+  dailyCapPerRecipient Int      @default(3)
+  consentTextVersion   String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

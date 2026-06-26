@@ -4,6 +4,9 @@ import { z } from "zod";
  * Zod schemas shared by API route handlers and (optionally) client forms.
  * Keeping validation here guarantees the server and any future client wiring
  * agree on the exact request contract.
+ *
+ * Phase 4 adds the compliance contracts (consent capture, compliance config,
+ * manual suppression, and the send-gate probe) to the Phase 1–3 schemas.
  */
 
 /** A single scraped property candidate accepted by POST /api/scrape. */
@@ -75,9 +78,86 @@ export const scrapeIngestQuerySchema = z.object({
   limit: z.number().int().min(1).max(100),
 });
 
+// ---------------------------------------------------------------------------
+// Phase 4 — Compliance backbone
+// ---------------------------------------------------------------------------
+
+/** Suppression reasons mirror the Prisma `SuppressionReason` enum. */
+export const suppressionReasonSchema = z.enum([
+  "STOP",
+  "DNC",
+  "BOUNCE",
+  "MANUAL",
+]);
+
+/**
+ * Record of prior express written consent for a property + channel.
+ * `consentTextVersion` is optional on the wire — when omitted the service
+ * stamps the version currently configured in ComplianceConfig so the stored
+ * record always points at a real, attorney-reviewed consent string.
+ */
+export const consentRecordSchema = z.object({
+  propertyId: z.string().uuid(),
+  channel: channelSchema,
+  source: z.string().min(1, "source is required").max(120),
+  consentTextVersion: z.string().min(1).max(40).optional(),
+  ipAddress: z.string().max(45).optional(),
+});
+
+/** Manual suppression entry (operator-added DNC/STOP/MANUAL/BOUNCE). */
+export const manualSuppressionSchema = z.object({
+  value: z.string().min(3, "value is required").max(160),
+  channel: channelSchema,
+  reason: suppressionReasonSchema,
+  detail: z.string().max(200).optional(),
+});
+
+/** E.164 sending number, e.g. +13055551234. Empty string clears it. */
+const e164OrEmpty = z
+  .string()
+  .max(20)
+  .refine((v) => v === "" || /^\+[1-9]\d{6,14}$/.test(v), {
+    message: "smsFromNumber must be E.164 (e.g. +13055551234) or empty",
+  });
+
+/** Request body for POST /api/compliance-config. */
+export const complianceConfigSchema = z
+  .object({
+    sendingEnabled: z.boolean(),
+    businessName: z.string().min(1, "businessName is required").max(120),
+    physicalAddress: z
+      .string()
+      .min(1, "physicalAddress is required (CAN-SPAM)")
+      .max(200),
+    supportEmail: z.string().email("supportEmail must be a valid email").max(160),
+    smsFromNumber: e164OrEmpty.optional(),
+    quietHoursStart: z.number().int().min(0).max(23),
+    quietHoursEnd: z.number().int().min(1).max(24),
+    dailyCapPerRecipient: z.number().int().min(1).max(50),
+    consentTextVersion: z
+      .string()
+      .min(1, "consentTextVersion is required")
+      .max(40),
+  })
+  .refine((c) => c.quietHoursEnd > c.quietHoursStart, {
+    message: "quietHoursEnd must be after quietHoursStart",
+    path: ["quietHoursEnd"],
+  });
+
+/** Probe the send-time gate without dispatching (compliance tester). */
+export const evaluateSendSchema = z.object({
+  channel: channelSchema,
+  recipient: z.string().min(3, "recipient is required").max(160),
+  propertyId: z.string().uuid(),
+});
+
 export type ScrapePropertyInput = z.infer<typeof scrapePropertyInput>;
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
 export type ScrapeIngestQuery = z.infer<typeof scrapeIngestQuerySchema>;
 export type SkipTraceRequest = z.infer<typeof skipTraceRequestSchema>;
 export type AgentThresholds = z.infer<typeof agentThresholdsSchema>;
 export type AgentConfigInput = z.infer<typeof agentConfigSchema>;
+export type ConsentRecordInput = z.infer<typeof consentRecordSchema>;
+export type ManualSuppressionInput = z.infer<typeof manualSuppressionSchema>;
+export type ComplianceConfigInput = z.infer<typeof complianceConfigSchema>;
+export type EvaluateSendInput = z.infer<typeof evaluateSendSchema>;

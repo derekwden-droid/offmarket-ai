@@ -10,6 +10,7 @@ import {
   Crosshair,
   Bot,
   Package,
+  ShieldCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -79,6 +80,17 @@ function buildGroups(counts: SidebarCountsDTO): NavGroup[] {
           icon: Bot,
           accent: "emerald",
           badge: counts.contacted,
+        },
+      ],
+    },
+    {
+      heading: "Governance",
+      items: [
+        {
+          label: "Compliance",
+          href: "/dashboard/compliance",
+          icon: ShieldCheck,
+          accent: "emerald",
         },
       ],
     },
