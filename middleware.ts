@@ -7,10 +7,25 @@ import { isAuthorizedApiRequest } from "@/lib/auth";
  * Every `/api/*` route requires the `INTERNAL_API_SECRET` (see `lib/auth.ts`).
  * Unauthenticated requests receive a 401 in the standard error envelope so
  * callers get a consistent shape. The browser UI never calls these routes
- * directly — it reads dashboard data through a server action — so locking the
- * HTTP API does not affect the app.
+ * directly — it reads/writes through server actions — so locking the HTTP API
+ * does not affect the app.
+ *
+ * Exception: `/api/inngest` is the queue's own endpoint. Inngest authenticates
+ * its calls with `INNGEST_SIGNING_KEY` (request-signature verification), so the
+ * shared-secret gate must let it through or background jobs would never run.
  */
 export function middleware(request: NextRequest): NextResponse {
+  // These routes authenticate callers themselves and must bypass the
+  // shared-secret gate: Inngest verifies its own request signatures, and
+  // /api/scrape verifies an HMAC signature (SCRAPE_WEBHOOK_SECRET).
+  const { pathname } = request.nextUrl;
+  if (
+    pathname.startsWith("/api/inngest") ||
+    pathname.startsWith("/api/scrape")
+  ) {
+    return NextResponse.next();
+  }
+
   if (isAuthorizedApiRequest(request.headers)) {
     return NextResponse.next();
   }

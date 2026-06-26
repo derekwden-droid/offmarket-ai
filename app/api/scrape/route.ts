@@ -1,113 +1,48 @@
 import type { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { ok, handleRouteError } from "@/lib/api";
-import { scrapeRequestSchema, type ScrapePropertyInput } from "@/lib/validations";
+import { ok, fail, handleRouteError } from "@/lib/api";
+import { scrapeRequestSchema } from "@/lib/validations";
+import { ingestProperties } from "@/lib/services/scrape";
+import { verifyWebhookSignature } from "@/lib/webhook";
 
-// Prisma requires the Node.js runtime (it is not Edge-compatible).
+// Prisma + crypto require the Node.js runtime (not Edge-compatible).
 export const runtime = "nodejs";
 
-function keyOf(property: {
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-}): string {
-  return `${property.address}|${property.city}|${property.state}|${property.zip}`;
-}
-
 /**
- * POST /api/scrape
- * Ingest a batch of scraped properties, de-duplicating against the composite
- * (address, city, state, zip) identity. Optionally connect the full matched set
- * to an existing ListPackage.
+ * POST /api/scrape — signed webhook receiver for inbound property batches.
+ *
+ * Authentication is the HMAC signature (SCRAPE_WEBHOOK_SECRET), not the internal
+ * API secret — this route is excluded from that middleware gate so external
+ * scrapers can post. Validation is Zod (422 on bad shape); ingestion is
+ * idempotent (the composite-key dedupe means a replayed batch creates 0 rows).
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { properties, listPackageId } = scrapeRequestSchema.parse(body);
+    // Read the raw body first: the signature is computed over the exact bytes.
+    const rawBody = await request.text();
 
-    const existing = await prisma.property.findMany({
-      where: {
-        OR: properties.map((property) => ({
-          address: property.address,
-          city: property.city,
-          state: property.state,
-          zip: property.zip,
-        })),
-      },
-      select: { address: true, city: true, state: true, zip: true },
+    const verification = verifyWebhookSignature({
+      rawBody,
+      signature: request.headers.get("x-scrape-signature"),
+      timestamp: request.headers.get("x-scrape-timestamp"),
+      secret: process.env.SCRAPE_WEBHOOK_SECRET,
     });
 
-    const existingKeys = new Set(existing.map(keyOf));
-    const seen = new Set<string>();
-    const toCreate: ScrapePropertyInput[] = [];
-
-    for (const property of properties) {
-      const key = keyOf(property);
-      if (existingKeys.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      toCreate.push(property);
+    if (!verification.valid) {
+      return fail("UNAUTHORIZED", verification.reason, 401);
     }
 
-    let created = 0;
-    if (toCreate.length > 0) {
-      const result = await prisma.property.createMany({
-        data: toCreate.map((property) => ({
-          address: property.address,
-          city: property.city,
-          state: property.state,
-          zip: property.zip,
-          propertyType: property.propertyType,
-          zoning: property.zoning,
-          scrapeSource: property.scrapeSource,
-        })),
-        skipDuplicates: true,
-      });
-      created = result.count;
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return fail("VALIDATION_ERROR", "Request body is not valid JSON.", 422);
     }
 
-    let connectedToPackage = 0;
-    if (listPackageId) {
-      const matched = await prisma.property.findMany({
-        where: {
-          OR: properties.map((property) => ({
-            address: property.address,
-            city: property.city,
-            state: property.state,
-            zip: property.zip,
-          })),
-        },
-        select: { id: true },
-      });
+    const { properties, listPackageId } = scrapeRequestSchema.parse(parsedBody);
+    const summary = await ingestProperties({ properties, listPackageId });
 
-      if (matched.length > 0) {
-        await prisma.listPackage.update({
-          where: { id: listPackageId },
-          data: {
-            properties: {
-              connect: matched.map((property) => ({ id: property.id })),
-            },
-          },
-        });
-        connectedToPackage = matched.length;
-      }
-    }
-
-    return ok({
-      received: properties.length,
-      created,
-      duplicates: properties.length - created,
-      connectedToPackage,
-    });
+    return ok(summary);
   } catch (error) {
-    // Surface a precise 404 when an invalid listPackageId is supplied.
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2025"
-    ) {
-      return handleRouteError(error);
-    }
     return handleRouteError(error);
   }
 }

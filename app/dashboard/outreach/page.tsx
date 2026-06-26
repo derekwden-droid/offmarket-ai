@@ -11,6 +11,8 @@ import {
   Repeat,
   Gauge,
   Plus,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +20,12 @@ import { Label, Textarea, Select } from "@/components/ui/field";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LogConsole, type LogLine, type LogKind } from "@/components/dashboard/log-console";
 import { useToast } from "@/components/ui/toast";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Channel as PrismaChannel } from "@prisma/client";
+import {
+  loadAgentConfigAction,
+  saveAgentConfigAction,
+} from "@/app/dashboard/outreach/actions";
 import { cn, formatNumber } from "@/lib/utils";
 
 /*
@@ -75,6 +83,8 @@ const REPLIES = [
 const DEFAULT_SCRIPT =
   "Hi {{ownerName}}, I'm reaching out about your property at {{address}} in {{city}}. We buy off-market homes as-is and can close fast. Would you consider a cash offer?";
 
+const AGENT_CONFIG_KEY = ["agent-config"] as const;
+
 function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
@@ -103,6 +113,15 @@ function renderScript(script: string, context: ScriptContext): string {
 
 export default function OutreachPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = React.useState(false);
+  const seededRef = React.useRef(false);
+
+  const configQuery = useQuery({
+    queryKey: AGENT_CONFIG_KEY,
+    queryFn: loadAgentConfigAction,
+    refetchOnWindowFocus: false,
+  });
 
   const [tone, setTone] = React.useState("Professional");
   const [objectives, setObjectives] = React.useState<Set<string>>(
@@ -268,10 +287,55 @@ export default function OutreachPage() {
     };
   }, []);
 
+  // Seed the controls from the saved configuration on first load.
+  React.useEffect(() => {
+    const config = configQuery.data;
+    if (!config || seededRef.current) return;
+    seededRef.current = true;
+    setTone(config.tone);
+    setObjectives(new Set(config.objectives));
+    setSms(config.channels.includes("SMS"));
+    setEmail(config.channels.includes("EMAIL"));
+    setTemperature(config.thresholds.temperature);
+    setPersistence(config.thresholds.persistence);
+    setDailyCap(config.thresholds.dailyCap);
+    setScript(config.scriptTemplate);
+  }, [configQuery.data]);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    const channels: PrismaChannel[] = [];
+    if (sms) channels.push("SMS");
+    if (email) channels.push("EMAIL");
+    const result = await saveAgentConfigAction({
+      tone,
+      objectives: Array.from(objectives),
+      channels,
+      scriptTemplate: script,
+      thresholds: { temperature, persistence, dailyCap },
+    });
+    setSaving(false);
+    if (result.ok) {
+      toast({
+        title: "Configuration saved",
+        description: "Agent settings persisted to the database.",
+        variant: "success",
+      });
+      void queryClient.invalidateQueries({ queryKey: AGENT_CONFIG_KEY });
+    } else {
+      toast({
+        title: "Couldn't save configuration",
+        description: result.error,
+        variant: "error",
+      });
+    }
+  }
+
   function deploy() {
     if (intervalRef.current) return;
 
-    const channels: Channel[] = [];
+    const channels: PrismaChannel[] = [];
     if (sms) channels.push("SMS");
     if (email) channels.push("Email");
     if (channels.length === 0) {
@@ -525,6 +589,20 @@ export default function OutreachPage() {
               spellCheck={false}
             />
           </div>
+
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save configuration
+          </Button>
 
           {running ? (
             <Button

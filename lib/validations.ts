@@ -32,10 +32,52 @@ export const skipTraceRequestSchema = z.object({
   propertyIds: z
     .array(z.string().uuid())
     .min(1, "at least one propertyId is required")
-    .max(200, "a single batch is limited to 200 ids"),
+    .max(500, "a single batch is limited to 500 ids"),
   concurrency: z.number().int().min(1).max(20).optional(),
+});
+
+/** Outreach channels mirror the Prisma `Channel` enum (SMS | EMAIL). */
+export const channelSchema = z.enum(["SMS", "EMAIL"]);
+
+/**
+ * Tunable thresholds for the outreach agent. Persisted as JSON on AgentConfig
+ * but validated to a strict shape so the saved config is always well-formed.
+ */
+export const agentThresholdsSchema = z.object({
+  temperature: z.number().min(0).max(1),
+  persistence: z.number().int().min(1).max(5),
+  dailyCap: z.number().int().min(1).max(500),
+});
+
+/** Request body for POST /api/agent-config. */
+export const agentConfigSchema = z.object({
+  tone: z.string().min(1, "tone is required").max(40),
+  objectives: z
+    .array(z.string().min(1).max(60))
+    .max(20, "at most 20 objectives")
+    .default([]),
+  channels: z
+    .array(channelSchema)
+    .min(1, "enable at least one channel")
+    .max(2),
+  scriptTemplate: z
+    .string()
+    .min(1, "scriptTemplate is required")
+    .max(2000, "scriptTemplate is limited to 2000 characters"),
+  thresholds: agentThresholdsSchema,
+});
+
+/** Query for the licensed-provider pull triggered from the Scrape UI. */
+export const scrapeIngestQuerySchema = z.object({
+  state: z.string().max(40).optional(),
+  propertyType: z.string().max(60).optional(),
+  source: z.string().max(80).optional(),
+  limit: z.number().int().min(1).max(100),
 });
 
 export type ScrapePropertyInput = z.infer<typeof scrapePropertyInput>;
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
+export type ScrapeIngestQuery = z.infer<typeof scrapeIngestQuerySchema>;
 export type SkipTraceRequest = z.infer<typeof skipTraceRequestSchema>;
+export type AgentThresholds = z.infer<typeof agentThresholdsSchema>;
+export type AgentConfigInput = z.infer<typeof agentConfigSchema>;

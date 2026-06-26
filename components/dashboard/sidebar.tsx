@@ -7,6 +7,7 @@ import {
   Sparkles,
   LayoutDashboard,
   Radar,
+  Crosshair,
   Bot,
   Package,
   X,
@@ -65,6 +66,12 @@ function buildGroups(counts: SidebarCountsDTO): NavGroup[] {
           icon: Radar,
           accent: "cyber",
           badge: counts.properties,
+        },
+        {
+          label: "Skip Trace",
+          href: "/dashboard/skip-trace",
+          icon: Crosshair,
+          accent: "cyber",
         },
         {
           label: "Outreach",
