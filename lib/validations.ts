@@ -5,8 +5,8 @@ import { z } from "zod";
  * Keeping validation here guarantees the server and any future client wiring
  * agree on the exact request contract.
  *
- * Phase 4 adds the compliance contracts (consent capture, compliance config,
- * manual suppression, and the send-gate probe) to the Phase 1–3 schemas.
+ * Phase 5 adds the outreach contracts (start outreach, approve draft) to the
+ * Phase 1–4 schemas.
  */
 
 /** A single scraped property candidate accepted by POST /api/scrape. */
@@ -151,6 +151,22 @@ export const evaluateSendSchema = z.object({
   propertyId: z.string().uuid(),
 });
 
+// ---------------------------------------------------------------------------
+// Phase 5 — Live outreach engine
+// ---------------------------------------------------------------------------
+
+/** Open a thread: send the AgentConfig opening script to a property. */
+export const startOutreachSchema = z.object({
+  propertyId: z.string().uuid(),
+  channel: channelSchema,
+});
+
+/** Approve a pending agent draft, optionally with an edited body. */
+export const approveDraftSchema = z.object({
+  draftId: z.string().uuid(),
+  editedBody: z.string().min(1).max(1500).optional(),
+});
+
 export type ScrapePropertyInput = z.infer<typeof scrapePropertyInput>;
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
 export type ScrapeIngestQuery = z.infer<typeof scrapeIngestQuerySchema>;
@@ -161,3 +177,5 @@ export type ConsentRecordInput = z.infer<typeof consentRecordSchema>;
 export type ManualSuppressionInput = z.infer<typeof manualSuppressionSchema>;
 export type ComplianceConfigInput = z.infer<typeof complianceConfigSchema>;
 export type EvaluateSendInput = z.infer<typeof evaluateSendSchema>;
+export type StartOutreachInput = z.infer<typeof startOutreachSchema>;
+export type ApproveDraftInput = z.infer<typeof approveDraftSchema>;

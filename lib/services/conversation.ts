@@ -7,9 +7,9 @@ import { prisma } from "@/lib/prisma";
  *
  * One Conversation per (property, channel) holds the outreach thread; every
  * inbound and outbound line is logged as a Message. The send-time gate uses
- * `countRecentOutbound` to enforce the per-recipient frequency cap, and the
- * inbound webhook uses `logMessage` + `setConversationState` to record replies
- * and opt-outs.
+ * `countRecentOutbound` for the frequency cap; the inbound webhook uses
+ * `logMessage` + `setConversationState`; Phase 5 adds pause control and the
+ * transcript/context reads the agent needs.
  */
 
 /** Find the open conversation for (property, channel) or create it. */
@@ -65,6 +65,17 @@ export async function setConversationState(
   });
 }
 
+/** Pause or resume a single conversation thread (Phase 5). */
+export async function setConversationPaused(
+  conversationId: string,
+  paused: boolean,
+) {
+  return prisma.conversation.update({
+    where: { id: conversationId },
+    data: { paused },
+  });
+}
+
 /**
  * Count outbound messages to a property on a channel since `since`. Backs the
  * per-recipient 24h frequency cap. One owner maps to one property here, so
@@ -84,16 +95,73 @@ export async function countRecentOutbound(args: {
   });
 }
 
-/** Resolve the property + owner contact behind a conversation (inbound routing). */
-export async function findConversationContext(conversationId: string) {
-  return prisma.conversation.findUnique({
+export interface TranscriptLine {
+  direction: MessageDirection;
+  body: string;
+}
+
+export interface ConversationContext {
+  conversation: {
+    id: string;
+    channel: Channel;
+    state: ConversationState;
+    paused: boolean;
+    propertyId: string;
+  };
+  property: {
+    id: string;
+    ownerName: string | null;
+    ownerPhone: string | null;
+    ownerEmail: string | null;
+    address: string;
+    city: string;
+    state: string;
+  };
+  transcript: TranscriptLine[];
+}
+
+/** Full context the agent needs: conversation, property, ordered transcript. */
+export async function getConversationContext(
+  conversationId: string,
+  transcriptLimit = 30,
+): Promise<ConversationContext | null> {
+  const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
       id: true,
       channel: true,
+      state: true,
+      paused: true,
+      propertyId: true,
       property: {
-        select: { id: true, ownerPhone: true, ownerEmail: true, state: true },
+        select: {
+          id: true,
+          ownerName: true,
+          ownerPhone: true,
+          ownerEmail: true,
+          address: true,
+          city: true,
+          state: true,
+        },
+      },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        take: transcriptLimit,
+        select: { direction: true, body: true },
       },
     },
   });
+  if (!conversation) return null;
+
+  return {
+    conversation: {
+      id: conversation.id,
+      channel: conversation.channel,
+      state: conversation.state,
+      paused: conversation.paused,
+      propertyId: conversation.propertyId,
+    },
+    property: conversation.property,
+    transcript: conversation.messages,
+  };
 }

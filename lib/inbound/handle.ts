@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { inngest } from "@/lib/inngest/client";
 import { normalizePhone } from "@/lib/compliance/normalize";
 import { classifyInbound, type InboundIntent } from "@/lib/compliance/keywords";
 import type { InboundSms } from "@/lib/webhooks/inbound-sms";
@@ -13,13 +14,15 @@ import {
 import { sendSms } from "@/lib/providers/sms";
 
 /**
- * Inbound SMS handler — the opt-out engine.
+ * Inbound SMS handler — the opt-out engine + agent hand-off.
  *
  * Runs after the route has cryptographically verified the delivery. STOP is
  * honored unconditionally and first (the suppression is keyed on the phone, not
  * a property, so it works even if we cannot match the sender to a lead). HELP
- * and START auto-respond best-effort; a missing SMS provider never fails the
- * webhook (we still return 200 so the carrier does not retry).
+ * and START auto-respond best-effort. A genuine REPLY is handed to the Phase 5
+ * agent (`agent/reply.requested`), which writes a draft for human approval —
+ * never an auto-send. A missing SMS provider never fails the webhook (we still
+ * return 200 so the carrier does not retry).
  */
 
 export interface InboundActionResult {
@@ -30,6 +33,8 @@ export interface InboundActionResult {
   matchedProperty: boolean;
   /** True when an auto-reply was dispatched. */
   autoReplied: boolean;
+  /** True when a REPLY was handed to the agent for drafting. */
+  agentEnqueued: boolean;
 }
 
 /** Best-effort: match the inbound sender to a property by owner phone. */
@@ -79,6 +84,8 @@ export async function handleInboundSms(
   // Match sender -> property -> conversation (best effort).
   const property = await findPropertyByPhone(inbound.from, normalizedFrom);
   let conversationId: string | null = null;
+  let conversationPaused = false;
+  let conversationOptedOut = false;
   if (property) {
     const conversation = await getOrCreateConversation({
       propertyId: property.id,
@@ -86,6 +93,8 @@ export async function handleInboundSms(
       assignedNumber: inbound.to,
     });
     conversationId = conversation.id;
+    conversationPaused = conversation.paused;
+    conversationOptedOut = conversation.state === "OPTED_OUT";
     await logMessage({
       conversationId: conversation.id,
       direction: "IN",
@@ -97,6 +106,7 @@ export async function handleInboundSms(
 
   let ledgerChanged = false;
   let autoReplied = false;
+  let agentEnqueued = false;
 
   if (intent === "STOP") {
     const row = await addSuppression({
@@ -135,13 +145,24 @@ export async function handleInboundSms(
         conversationId,
       });
     }
+  } else {
+    // REPLY — hand off to the Phase 5 agent (draft-for-approval). It re-checks
+    // pause/opt-out and writes a PENDING draft; it never auto-sends. Skip when
+    // there is no matched conversation, or it is paused / already opted out.
+    if (conversationId && !conversationPaused && !conversationOptedOut) {
+      await inngest.send({
+        name: "agent/reply.requested",
+        data: { conversationId },
+      });
+      agentEnqueued = true;
+    }
   }
-  // REPLY: logged above; the Phase 5 agent state machine takes it from here.
 
   return {
     intent,
     ledgerChanged,
     matchedProperty: property !== null,
     autoReplied,
+    agentEnqueued,
   };
 }

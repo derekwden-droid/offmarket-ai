@@ -58,6 +58,13 @@ enum SkipTraceJobStatus {
   FAILED
 }
 
+/// Review lifecycle of an agent-proposed reply (Phase 5, draft-for-approval).
+enum DraftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Property {
   id           String     @id @default(uuid())
   address      String
@@ -132,7 +139,9 @@ model Conversation {
   channel        Channel
   state          ConversationState @default(NEW)
   assignedNumber String?
+  paused         Boolean           @default(false)
   messages       Message[]
+  drafts         AgentDraft[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -153,6 +162,28 @@ model Message {
 
   @@index([conversationId])
   @@index([providerSid])
+}
+
+/// Agent-proposed reply awaiting human approval (Phase 5, draft-for-approval).
+/// On approval the body is re-checked through the compliance gate, sent, logged
+/// as an OUT Message, and the conversation advances to `proposedState`.
+model AgentDraft {
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  propertyId     String
+  channel        Channel
+  body           String
+  proposedState  ConversationState
+  reasoning      String?
+  qualified      Boolean           @default(false)
+  status         DraftStatus       @default(PENDING)
+  providerSid    String?
+  createdAt      DateTime          @default(now())
+  decidedAt      DateTime?
+
+  @@index([status])
+  @@index([conversationId])
 }
 
 /// Batch-job progress tracking for off-request skip tracing.

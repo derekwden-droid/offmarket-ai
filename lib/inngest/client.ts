@@ -25,9 +25,17 @@ type TestHelloWorld = {
   };
 };
 
+type AgentReplyRequested = {
+  data: {
+    /** The conversation whose latest inbound reply needs an agent draft. */
+    conversationId: string;
+  };
+};
+
 export type AppEvents = {
   "skip-trace/job.requested": SkipTraceJobRequested;
   "test/hello.world": TestHelloWorld;
+  "agent/reply.requested": AgentReplyRequested;
 };
 
 /**

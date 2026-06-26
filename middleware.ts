@@ -10,18 +10,21 @@ import { isAuthorizedApiRequest } from "@/lib/auth";
  * directly — it reads/writes through server actions — so locking the HTTP API
  * does not affect the app.
  *
- * Exceptions (self-authenticating routes that must bypass the shared secret):
+ * Exceptions (self-authenticating / public routes that bypass the shared secret):
  *   - /api/inngest      — Inngest verifies its own request signatures.
  *   - /api/scrape       — verifies an HMAC signature (SCRAPE_WEBHOOK_SECRET).
  *   - /api/inbound/*    — inbound SMS webhooks verify a provider signature
  *                         (Twilio HMAC-SHA1 / Telnyx Ed25519). Phase 4.
+ *   - /api/unsubscribe  — one-click CAN-SPAM unsubscribe; authenticated by a
+ *                         per-email HMAC token, must work without a login. Phase 5.
  */
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
   if (
     pathname.startsWith("/api/inngest") ||
     pathname.startsWith("/api/scrape") ||
-    pathname.startsWith("/api/inbound")
+    pathname.startsWith("/api/inbound") ||
+    pathname.startsWith("/api/unsubscribe")
   ) {
     return NextResponse.next();
   }
