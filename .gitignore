@@ -22,9 +22,10 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# local env files
+# local env files — ignore every .env variant except the committed template
 .env
-.env*.local
+.env.*
+!.env.example
 
 # vercel
 .vercel

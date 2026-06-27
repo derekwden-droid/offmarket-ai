@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
+import { recordApiError } from "@/lib/observability";
 
 /** Successful API envelope. */
 export interface ApiSuccess<T> {
@@ -48,6 +49,10 @@ export function fail(
  * - Prisma P2025 (record not found)   -> 404 NOT_FOUND
  * - other known Prisma errors         -> 500 DATABASE_ERROR
  * - anything else                     -> 500 INTERNAL_ERROR
+ *
+ * Phase 6: 5xx outcomes (DATABASE_ERROR, INTERNAL_ERROR) are reported to the
+ * observability sink (structured `api.error` log + Sentry) so they surface on
+ * dashboards/alerts. 4xx outcomes are expected client errors and are not paged.
  */
 export function handleRouteError(error: unknown): NextResponse<ApiErrorBody> {
   if (error instanceof ZodError) {
@@ -88,10 +93,12 @@ export function handleRouteError(error: unknown): NextResponse<ApiErrorBody> {
       case "P2025":
         return fail("NOT_FOUND", "The requested record was not found.", 404);
       default:
+        recordApiError(error, { code: `DATABASE_ERROR:${error.code}` });
         return fail("DATABASE_ERROR", `Database error (${error.code}).`, 500);
     }
   }
 
+  recordApiError(error, { code: "INTERNAL_ERROR" });
   const message =
     error instanceof Error ? error.message : "An unexpected error occurred.";
   return fail("INTERNAL_ERROR", message, 500);

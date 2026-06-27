@@ -13,6 +13,11 @@ import { sendSms } from "@/lib/providers/sms";
 import { sendEmail, canSpamFooter, escapeHtml } from "@/lib/providers/email";
 import { buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { renderTemplate } from "@/lib/agent/prompt";
+import {
+  recordSendOk,
+  recordSendFailed,
+  recordSendBlocked,
+} from "@/lib/observability";
 
 /**
  * Outreach send service — the ONE outbound path.
@@ -89,6 +94,7 @@ export async function sendOutreach(
       select: { paused: true },
     });
     if (convo?.paused) {
+      recordSendBlocked({ channel: input.channel, reason: "PAUSED", conversationId: input.conversationId });
       return { sent: false, conversationId: input.conversationId, blockReason: "PAUSED", detail: "Conversation is paused." };
     }
   }
@@ -100,6 +106,11 @@ export async function sendOutreach(
     propertyId: input.propertyId,
   });
   if (!decision.allowed) {
+    recordSendBlocked({
+      channel: input.channel,
+      reason: decision.reason ?? "GATE_BLOCKED",
+      conversationId: input.conversationId ?? null,
+    });
     return {
       sent: false,
       conversationId: input.conversationId ?? null,
@@ -124,8 +135,19 @@ export async function sendOutreach(
     if (!from) {
       return { sent: false, conversationId: conversation.id, blockReason: "GATE_BLOCKED", decision, detail: "No SMS from-number configured." };
     }
-    const result = await sendSms({ to: recipient, from, body: input.body });
-    providerSid = result.providerSid;
+    try {
+      const result = await sendSms({ to: recipient, from, body: input.body });
+      providerSid = result.providerSid;
+    } catch (error) {
+      recordSendFailed(error, { channel: "SMS", conversationId: conversation.id });
+      return {
+        sent: false,
+        conversationId: conversation.id,
+        blockReason: "GATE_BLOCKED",
+        decision,
+        detail: error instanceof Error ? error.message : "SMS provider send failed.",
+      };
+    }
   } else {
     const secret = process.env.UNSUBSCRIBE_SECRET;
     if (!secret || !config) {
@@ -144,13 +166,24 @@ export async function sendOutreach(
       unsubscribeUrl,
     });
     const html = `<div style="font-family:sans-serif;font-size:14px;color:#111827;line-height:1.6">${escapeHtml(input.body).replace(/\n/g, "<br/>")}</div>${footer.html}`;
-    const result = await sendEmail({
-      to: recipient,
-      subject: `Regarding ${property.address}`,
-      html,
-      text: `${input.body}${footer.text}`,
-    });
-    providerSid = result.providerSid;
+    try {
+      const result = await sendEmail({
+        to: recipient,
+        subject: `Regarding ${property.address}`,
+        html,
+        text: `${input.body}${footer.text}`,
+      });
+      providerSid = result.providerSid;
+    } catch (error) {
+      recordSendFailed(error, { channel: "EMAIL", conversationId: conversation.id });
+      return {
+        sent: false,
+        conversationId: conversation.id,
+        blockReason: "GATE_BLOCKED",
+        decision,
+        detail: error instanceof Error ? error.message : "Email provider send failed.",
+      };
+    }
   }
 
   await logMessage({
@@ -161,6 +194,7 @@ export async function sendOutreach(
     status: "sent",
   });
 
+  recordSendOk({ channel: input.channel, providerSid, conversationId: conversation.id });
   return { sent: true, conversationId: conversation.id, providerSid, decision };
 }
 

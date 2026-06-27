@@ -12,6 +12,7 @@ import {
   setConversationState,
 } from "@/lib/services/conversation";
 import { sendSms } from "@/lib/providers/sms";
+import { recordOptOut } from "@/lib/observability";
 
 /**
  * Inbound SMS handler — the opt-out engine + agent hand-off.
@@ -116,6 +117,9 @@ export async function handleInboundSms(
       detail: "Inbound STOP keyword",
     });
     ledgerChanged = row !== null;
+    if (ledgerChanged) {
+      recordOptOut({ channel: "SMS", reason: "STOP", source: "inbound-sms" });
+    }
     if (conversationId) await setConversationState(conversationId, "OPTED_OUT");
 
     if (config) {

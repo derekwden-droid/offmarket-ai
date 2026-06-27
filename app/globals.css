@@ -105,3 +105,23 @@ body {
     animation: none !important;
   }
 }
+
+/* Keyboard focus ring (Phase 6 a11y) ------------------------------------ */
+/* Visible focus only for keyboard users; never on mouse click. Uses the
+   Cyber Blue accent so the indicator meets contrast against the dark canvas. */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect reduced motion for smooth scrolling too. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

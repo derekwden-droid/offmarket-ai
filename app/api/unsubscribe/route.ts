@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 import { addSuppression } from "@/lib/services/suppression";
+import { recordOptOut } from "@/lib/observability";
 
 // Prisma + crypto require the Node.js runtime.
 export const runtime = "nodejs";
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
     reason: "STOP",
     detail: "One-click email unsubscribe",
   });
+  recordOptOut({ channel: "EMAIL", reason: "STOP", source: "one-click-unsubscribe" });
 
   return page(
     "You're unsubscribed",

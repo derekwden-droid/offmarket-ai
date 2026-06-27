@@ -287,11 +287,22 @@ The **skip-trace provider** (`lib/providers/skip-trace.ts`) already switches aut
 
 ## Roadmap
 
-- [ ] **Authentication middleware** on API routes and dashboard — **currently not implemented** and required before any production/public deployment.
-- [ ] Wire sidebar counters and KPI cards to TanStack Query for live client refetching.
-- [ ] Replace the Scrape/Outreach simulations with the real `/api/scrape` and `/api/skip-trace` flows end-to-end.
-- [ ] Swap the inline toast system for `sonner` if a richer toast feature set is desired.
-- [ ] Persisted agent configurations and campaign history.
+The engineering critical path (Phases 0–7) is tracked in the build schedule.
+Phases 0–5 are complete and live; Phase 6 (hardening) is in progress; Phase 7
+(controlled launch) is gated by external long-poles (EIN, 10DLC, attorney).
+
+- [x] **Authentication** on all `/api/*` routes (`INTERNAL_API_SECRET`, Phase 0).
+- [x] Live Prisma data for sidebar counts and KPI cards via TanStack Query (Phase 1).
+- [x] Real `/api/scrape` + `/api/skip-trace` ingestion and enrichment behind durable Inngest workers (Phases 2–3).
+- [x] Compliance backbone — send-time gate, consent, STOP/HELP, DNC, quiet hours, kill switch (Phase 4).
+- [x] Live SMS/email outreach + draft-for-approval Claude agent (Phase 5).
+- [x] **Phase 6 hardening:** real Supabase RLS policies, public-route rate limiting, structured logs + Sentry with deliverability/opt-out alerts, a11y pass, runbook/on-call docs.
+- [ ] Phase 7: staging dry-run, Go/No-Go gate, soft launch under monitoring.
+
+> **Note on simulation surfaces:** the **Scrape** and **Outreach** dashboards
+> retain client-side demo engines for offline demonstration, but the real
+> ingestion, skip-trace, compliance, and outreach paths are live server-side and
+> are the source of truth in production.
 
 ## Deployment
 
@@ -299,15 +310,34 @@ The **skip-trace provider** (`lib/providers/skip-trace.ts`) already switches aut
 2. Import the repo into **Vercel**.
 3. Add the environment variables from [Environment variables](#environment-variables) to the Vercel project.
 4. Ensure the build command is `npm run build` (runs `prisma generate` first).
-5. Run `npx prisma migrate deploy` against your production database (e.g. as a release step or manually) before first traffic.
+5. Run `npx prisma migrate deploy` against your production database (e.g. as a release step or manually) before first traffic. This includes the Phase 6 `*_phase6_rls_hardening` migration, which locks the Supabase Data API down.
+6. Configure observability: set `SENTRY_DSN` and wire a Vercel Log Drain to alert on the events listed in [`RUNBOOK.md`](./RUNBOOK.md) (§3). Tune public-route rate limits via `RATE_LIMIT_*`.
 
-Supabase and Vercel both offer generous free tiers suitable for staging.
+Supabase and Vercel both offer generous free tiers suitable for staging. See
+[`RUNBOOK.md`](./RUNBOOK.md) and [`ON-CALL.md`](./ON-CALL.md) for operations and
+incident response.
 
 ## Security & compliance
 
-- **Authentication is not yet implemented.** The API routes and dashboard are open; add auth (e.g. Supabase Auth, Clerk, or NextAuth) and protect routes before exposing this anywhere.
-- **Owner-contact data** obtained via skip tracing is subject to data-licensing terms and regulations (e.g. TCPA/DNC for outreach). Ensure your data provider contract and outreach practices are compliant; this codebase does not enforce those rules for you.
-- Secrets live only in `.env` (gitignored). Never commit real connection strings or API keys.
+- **API authentication is enforced.** Every `/api/*` route requires
+  `INTERNAL_API_SECRET` (constant-time check in `lib/auth.ts`, gated by
+  `middleware.ts`). The browser never calls these routes — it uses server
+  actions — and four self-authenticating routes (`/api/inngest`, `/api/scrape`,
+  `/api/inbound/*`, `/api/unsubscribe`) verify their own signatures/tokens and
+  are additionally **rate-limited per IP** (Phase 6).
+- **Row-Level Security (Phase 6).** Every table has RLS forced and the Supabase
+  Data API roles (`anon`/`authenticated`) are denied and stripped of grants. All
+  access is server-side via the `postgres` role (BYPASSRLS). Verify with the
+  queries in [`RUNBOOK.md`](./RUNBOOK.md) §4.
+- **Compliance is enforced in code (Phases 4–5).** A single fail-closed send-time
+  gate checks consent, suppression, national DNC, recipient-local quiet hours,
+  frequency caps, sender identity, and a global kill switch (defaults OFF) before
+  any dispatch. STOP/HELP and one-click unsubscribe are wired to the Suppression
+  ledger. This is not legal advice — confirm messaging, consent, and data
+  sourcing with a qualified TCPA/telemarketing attorney before live outreach.
+- **Secrets** live only in env (`.gitignore` blocks every `.env*` except
+  `.env.example`). Never commit connection strings or API keys; rotate any leaked
+  token immediately (see RUNBOOK §4).
 
 ## License
 
