@@ -1,15 +1,9 @@
 import { z } from "zod";
 
-/**
- * Zod schemas shared by API route handlers and (optionally) client forms.
- * Keeping validation here guarantees the server and any future client wiring
- * agree on the exact request contract.
- *
- * Phase 5 adds the outreach contracts (start outreach, approve draft) to the
- * Phase 1–4 schemas.
- */
+// ---------------------------------------------------------------------------
+// Phase 1–3 — Scraping & skip-trace
+// ---------------------------------------------------------------------------
 
-/** A single scraped property candidate accepted by POST /api/scrape. */
 export const scrapePropertyInput = z.object({
   address: z.string().min(1, "address is required").max(200),
   city: z.string().min(1, "city is required").max(120),
@@ -39,20 +33,14 @@ export const skipTraceRequestSchema = z.object({
   concurrency: z.number().int().min(1).max(20).optional(),
 });
 
-/** Outreach channels mirror the Prisma `Channel` enum (SMS | EMAIL). */
 export const channelSchema = z.enum(["SMS", "EMAIL"]);
 
-/**
- * Tunable thresholds for the outreach agent. Persisted as JSON on AgentConfig
- * but validated to a strict shape so the saved config is always well-formed.
- */
 export const agentThresholdsSchema = z.object({
   temperature: z.number().min(0).max(1),
   persistence: z.number().int().min(1).max(5),
   dailyCap: z.number().int().min(1).max(500),
 });
 
-/** Request body for POST /api/agent-config. */
 export const agentConfigSchema = z.object({
   tone: z.string().min(1, "tone is required").max(40),
   objectives: z
@@ -70,7 +58,6 @@ export const agentConfigSchema = z.object({
   thresholds: agentThresholdsSchema,
 });
 
-/** Query for the licensed-provider pull triggered from the Scrape UI. */
 export const scrapeIngestQuerySchema = z.object({
   state: z.string().max(40).optional(),
   propertyType: z.string().max(60).optional(),
@@ -82,7 +69,6 @@ export const scrapeIngestQuerySchema = z.object({
 // Phase 4 — Compliance backbone
 // ---------------------------------------------------------------------------
 
-/** Suppression reasons mirror the Prisma `SuppressionReason` enum. */
 export const suppressionReasonSchema = z.enum([
   "STOP",
   "DNC",
@@ -90,12 +76,6 @@ export const suppressionReasonSchema = z.enum([
   "MANUAL",
 ]);
 
-/**
- * Record of prior express written consent for a property + channel.
- * `consentTextVersion` is optional on the wire — when omitted the service
- * stamps the version currently configured in ComplianceConfig so the stored
- * record always points at a real, attorney-reviewed consent string.
- */
 export const consentRecordSchema = z.object({
   propertyId: z.string().uuid(),
   channel: channelSchema,
@@ -104,7 +84,6 @@ export const consentRecordSchema = z.object({
   ipAddress: z.string().max(45).optional(),
 });
 
-/** Manual suppression entry (operator-added DNC/STOP/MANUAL/BOUNCE). */
 export const manualSuppressionSchema = z.object({
   value: z.string().min(3, "value is required").max(160),
   channel: channelSchema,
@@ -112,7 +91,6 @@ export const manualSuppressionSchema = z.object({
   detail: z.string().max(200).optional(),
 });
 
-/** E.164 sending number, e.g. +13055551234. Empty string clears it. */
 const e164OrEmpty = z
   .string()
   .max(20)
@@ -120,7 +98,6 @@ const e164OrEmpty = z
     message: "smsFromNumber must be E.164 (e.g. +13055551234) or empty",
   });
 
-/** Request body for POST /api/compliance-config. */
 export const complianceConfigSchema = z
   .object({
     sendingEnabled: z.boolean(),
@@ -144,7 +121,6 @@ export const complianceConfigSchema = z
     path: ["quietHoursEnd"],
   });
 
-/** Probe the send-time gate without dispatching (compliance tester). */
 export const evaluateSendSchema = z.object({
   channel: channelSchema,
   recipient: z.string().min(3, "recipient is required").max(160),
@@ -155,17 +131,45 @@ export const evaluateSendSchema = z.object({
 // Phase 5 — Live outreach engine
 // ---------------------------------------------------------------------------
 
-/** Open a thread: send the AgentConfig opening script to a property. */
 export const startOutreachSchema = z.object({
   propertyId: z.string().uuid(),
   channel: channelSchema,
 });
 
-/** Approve a pending agent draft, optionally with an edited body. */
 export const approveDraftSchema = z.object({
   draftId: z.string().uuid(),
   editedBody: z.string().min(1).max(1500).optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Vacancy verification (new)
+// ---------------------------------------------------------------------------
+
+export const verifyVacancyConfigSchema = z.object({
+  imageryMaxAgeDays: z.number().int().positive().max(3650).default(365),
+  minConfidenceToConfirm: z.number().min(0).max(1).default(0.8),
+  structureVetoConfidence: z.number().min(0).max(1).default(0.6),
+});
+
+export const verifyVacancySchema = z.object({
+  propertyId: z.string().uuid(),
+  parcelOverride: z
+    .object({
+      lat: z.number().min(-90).max(90).optional(),
+      lng: z.number().min(-180).max(180).optional(),
+      apn: z.string().max(80).optional(),
+      parcelGeometry: z.unknown().optional(),
+      assessorVacantFlag: z.boolean().optional(),
+      landUseCode: z.string().max(80).optional(),
+    })
+    .strict()
+    .optional(),
+  config: verifyVacancyConfigSchema.partial().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export type ScrapePropertyInput = z.infer<typeof scrapePropertyInput>;
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
@@ -179,3 +183,5 @@ export type ComplianceConfigInput = z.infer<typeof complianceConfigSchema>;
 export type EvaluateSendInput = z.infer<typeof evaluateSendSchema>;
 export type StartOutreachInput = z.infer<typeof startOutreachSchema>;
 export type ApproveDraftInput = z.infer<typeof approveDraftSchema>;
+export type VerifyVacancyConfigInput = z.infer<typeof verifyVacancyConfigSchema>;
+export type VerifyVacancyInput = z.infer<typeof verifyVacancySchema>;
